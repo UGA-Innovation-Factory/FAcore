@@ -12,14 +12,15 @@ from __future__ import annotations
 from collections import UserDict
 from collections.abc import Callable, Iterable, Mapping, ValuesView
 from datetime import datetime, timedelta
+from enum import StrEnum
 import logging
 import time
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, TypeVar, cast
 
 import attr
 import voluptuous as vol
 
-from homeassistant.backports.enum import StrEnum
+from homeassistant.backports.functools import cached_property
 from homeassistant.const import (
     ATTR_DEVICE_CLASS,
     ATTR_FRIENDLY_NAME,
@@ -50,7 +51,7 @@ from homeassistant.util.read_only_dict import ReadOnlyDict
 
 from . import device_registry as dr, storage
 from .device_registry import EVENT_DEVICE_REGISTRY_UPDATED
-from .json import JSON_DUMP, find_paths_unserializable_data
+from .json import JSON_DUMP, find_paths_unserializable_data, json_bytes
 from .typing import UNDEFINED, UndefinedType
 
 if TYPE_CHECKING:
@@ -64,7 +65,7 @@ SAVE_DELAY = 10
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION_MAJOR = 1
-STORAGE_VERSION_MINOR = 11
+STORAGE_VERSION_MINOR = 12
 STORAGE_KEY = "core.entity_registry"
 
 CLEANUP_INTERVAL = 3600 * 24
@@ -107,8 +108,30 @@ class RegistryEntryHider(StrEnum):
     USER = "user"
 
 
+class _EventEntityRegistryUpdatedData_CreateRemove(TypedDict):
+    """EventEntityRegistryUpdated data for action type 'create' and 'remove'."""
+
+    action: Literal["create", "remove"]
+    entity_id: str
+
+
+class _EventEntityRegistryUpdatedData_Update(TypedDict):
+    """EventEntityRegistryUpdated data for action type 'update'."""
+
+    action: Literal["update"]
+    entity_id: str
+    changes: dict[str, Any]  # Required with action == "update"
+    old_entity_id: NotRequired[str]
+
+
+EventEntityRegistryUpdatedData = (
+    _EventEntityRegistryUpdatedData_CreateRemove
+    | _EventEntityRegistryUpdatedData_Update
+)
+
+
 EntityOptionsType = Mapping[str, Mapping[str, Any]]
-ReadOnlyEntityOptionsType = ReadOnlyDict[str, Mapping[str, Any]]
+ReadOnlyEntityOptionsType = ReadOnlyDict[str, ReadOnlyDict[str, Any]]
 
 DISLAY_DICT_OPTIONAL = (
     ("ai", "area_id"),
@@ -126,13 +149,14 @@ def _protect_entity_options(
     return ReadOnlyDict({key: ReadOnlyDict(val) for key, val in data.items()})
 
 
-@attr.s(slots=True, frozen=True)
+@attr.s(frozen=True)
 class RegistryEntry:
     """Entity Registry Entry."""
 
     entity_id: str = attr.ib()
     unique_id: str = attr.ib()
     platform: str = attr.ib()
+    previous_unique_id: str | None = attr.ib(default=None)
     aliases: set[str] = attr.ib(factory=set)
     area_id: str | None = attr.ib(default=None)
     capabilities: Mapping[str, Any] | None = attr.ib(default=None)
@@ -160,13 +184,6 @@ class RegistryEntry:
     supported_features: int = attr.ib(default=0)
     translation_key: str | None = attr.ib(default=None)
     unit_of_measurement: str | None = attr.ib(default=None)
-
-    _partial_repr: str | None | UndefinedType = attr.ib(
-        cmp=False, default=UNDEFINED, init=False, repr=False
-    )
-    _display_repr: str | None | UndefinedType = attr.ib(
-        cmp=False, default=UNDEFINED, init=False, repr=False
-    )
 
     @domain.default
     def _domain_default(self) -> str:
@@ -209,21 +226,17 @@ class RegistryEntry:
                 display_dict["dp"] = precision
         return display_dict
 
-    @property
-    def display_json_repr(self) -> str | None:
+    @cached_property
+    def display_json_repr(self) -> bytes | None:
         """Return a cached partial JSON representation of the entry.
 
         This version only includes what's needed for display.
         """
-        if self._display_repr is not UNDEFINED:
-            return self._display_repr
-
         try:
             dict_repr = self._as_display_dict
-            json_repr: str | None = JSON_DUMP(dict_repr) if dict_repr else None
-            object.__setattr__(self, "_display_repr", json_repr)
+            json_repr: bytes | None = json_bytes(dict_repr) if dict_repr else None
+            return json_repr
         except (ValueError, TypeError):
-            object.__setattr__(self, "_display_repr", None)
             _LOGGER.error(
                 "Unable to serialize entry %s to JSON. Bad data found at %s",
                 self.entity_id,
@@ -231,10 +244,10 @@ class RegistryEntry:
                     find_paths_unserializable_data(dict_repr, dump=JSON_DUMP)
                 ),
             )
-        # Mypy doesn't understand the __setattr__ business
-        return self._display_repr  # type: ignore[return-value]
 
-    @property
+        return None
+
+    @cached_property
     def as_partial_dict(self) -> dict[str, Any]:
         """Return a partial dict representation of the entry."""
         return {
@@ -256,17 +269,25 @@ class RegistryEntry:
             "unique_id": self.unique_id,
         }
 
-    @property
-    def partial_json_repr(self) -> str | None:
-        """Return a cached partial JSON representation of the entry."""
-        if self._partial_repr is not UNDEFINED:
-            return self._partial_repr
+    @cached_property
+    def extended_dict(self) -> dict[str, Any]:
+        """Return a extended dict representation of the entry."""
+        return {
+            **self.as_partial_dict,
+            "aliases": self.aliases,
+            "capabilities": self.capabilities,
+            "device_class": self.device_class,
+            "original_device_class": self.original_device_class,
+            "original_icon": self.original_icon,
+        }
 
+    @cached_property
+    def partial_json_repr(self) -> bytes | None:
+        """Return a cached partial JSON representation of the entry."""
         try:
             dict_repr = self.as_partial_dict
-            object.__setattr__(self, "_partial_repr", JSON_DUMP(dict_repr))
+            return json_bytes(dict_repr)
         except (ValueError, TypeError):
-            object.__setattr__(self, "_partial_repr", None)
             _LOGGER.error(
                 "Unable to serialize entry %s to JSON. Bad data found at %s",
                 self.entity_id,
@@ -274,8 +295,7 @@ class RegistryEntry:
                     find_paths_unserializable_data(dict_repr, dump=JSON_DUMP)
                 ),
             )
-        # Mypy doesn't understand the __setattr__ business
-        return self._partial_repr  # type: ignore[return-value]
+        return None
 
     @callback
     def write_unavailable_state(self, hass: HomeAssistant) -> None:
@@ -403,17 +423,24 @@ class EntityRegistryStore(storage.Store[dict[str, list[dict[str, Any]]]]):
             # Version 1.11 adds deleted_entities
             data["deleted_entities"] = data.get("deleted_entities", [])
 
+        if old_major_version == 1 and old_minor_version < 12:
+            # Version 1.12 adds previous_unique_id
+            for entity in data["entities"]:
+                entity["previous_unique_id"] = None
+
         if old_major_version > 1:
             raise NotImplementedError
         return data
 
 
-class EntityRegistryItems(UserDict[str, "RegistryEntry"]):
+class EntityRegistryItems(UserDict[str, RegistryEntry]):
     """Container for entity registry items, maps entity_id -> entry.
 
-    Maintains two additional indexes:
+    Maintains four additional indexes:
     - id -> entry
     - (domain, platform, unique_id) -> entity_id
+    - config_entry_id -> list[key]
+    - device_id -> list[key]
     """
 
     def __init__(self) -> None:
@@ -421,6 +448,8 @@ class EntityRegistryItems(UserDict[str, "RegistryEntry"]):
         super().__init__()
         self._entry_ids: dict[str, RegistryEntry] = {}
         self._index: dict[tuple[str, str, str], str] = {}
+        self._config_entry_id_index: dict[str, list[str]] = {}
+        self._device_id_index: dict[str, list[str]] = {}
 
     def values(self) -> ValuesView[RegistryEntry]:
         """Return the underlying values to avoid __iter__ overhead."""
@@ -428,19 +457,36 @@ class EntityRegistryItems(UserDict[str, "RegistryEntry"]):
 
     def __setitem__(self, key: str, entry: RegistryEntry) -> None:
         """Add an item."""
-        if key in self:
-            old_entry = self[key]
-            del self._entry_ids[old_entry.id]
-            del self._index[(old_entry.domain, old_entry.platform, old_entry.unique_id)]
-        super().__setitem__(key, entry)
+        data = self.data
+        if key in data:
+            self._unindex_entry(key)
+        data[key] = entry
         self._entry_ids[entry.id] = entry
         self._index[(entry.domain, entry.platform, entry.unique_id)] = entry.entity_id
+        if (config_entry_id := entry.config_entry_id) is not None:
+            self._config_entry_id_index.setdefault(config_entry_id, []).append(key)
+        if (device_id := entry.device_id) is not None:
+            self._device_id_index.setdefault(device_id, []).append(key)
+
+    def _unindex_entry(self, key: str) -> None:
+        """Unindex an entry."""
+        entry = self.data[key]
+        del self._entry_ids[entry.id]
+        del self._index[(entry.domain, entry.platform, entry.unique_id)]
+        if (config_entry_id := entry.config_entry_id) is not None:
+            entries = self._config_entry_id_index[config_entry_id]
+            entries.remove(key)
+            if not entries:
+                del self._config_entry_id_index[config_entry_id]
+        if (device_id := entry.device_id) is not None:
+            entries = self._device_id_index[device_id]
+            entries.remove(key)
+            if not entries:
+                del self._device_id_index[device_id]
 
     def __delitem__(self, key: str) -> None:
         """Remove an item."""
-        entry = self[key]
-        del self._entry_ids[entry.id]
-        del self._index[(entry.domain, entry.platform, entry.unique_id)]
+        self._unindex_entry(key)
         super().__delitem__(key)
 
     def get_entity_id(self, key: tuple[str, str, str]) -> str | None:
@@ -450,6 +496,19 @@ class EntityRegistryItems(UserDict[str, "RegistryEntry"]):
     def get_entry(self, key: str) -> RegistryEntry | None:
         """Get entry from id."""
         return self._entry_ids.get(key)
+
+    def get_entries_for_device_id(self, device_id: str) -> list[RegistryEntry]:
+        """Get entries for device."""
+        return [self.data[key] for key in self._device_id_index.get(device_id, ())]
+
+    def get_entries_for_config_entry_id(
+        self, config_entry_id: str
+    ) -> list[RegistryEntry]:
+        """Get entries for config entry."""
+        return [
+            self.data[key]
+            for key in self._config_entry_id_index.get(config_entry_id, ())
+        ]
 
 
 class EntityRegistry:
@@ -885,6 +944,7 @@ class EntityRegistry:
                 )
             new_values["unique_id"] = new_unique_id
             old_values["unique_id"] = old.unique_id
+            new_values["previous_unique_id"] = old.unique_id
 
         if not new_values:
             return old
@@ -1052,6 +1112,7 @@ class EntityRegistry:
                     supported_features=entity["supported_features"],
                     translation_key=entity["translation_key"],
                     unique_id=entity["unique_id"],
+                    previous_unique_id=entity["previous_unique_id"],
                     unit_of_measurement=entity["unit_of_measurement"],
                 )
             for entity in data["deleted_entities"]:
@@ -1107,6 +1168,7 @@ class EntityRegistry:
                 "supported_features": entry.supported_features,
                 "translation_key": entry.translation_key,
                 "unique_id": entry.unique_id,
+                "previous_unique_id": entry.previous_unique_id,
                 "unit_of_measurement": entry.unit_of_measurement,
             }
             for entry in self.entities.values()
@@ -1188,9 +1250,8 @@ def async_entries_for_device(
     """Return entries that match a device."""
     return [
         entry
-        for entry in registry.entities.values()
-        if entry.device_id == device_id
-        and (not entry.disabled_by or include_disabled_entities)
+        for entry in registry.entities.get_entries_for_device_id(device_id)
+        if (not entry.disabled_by or include_disabled_entities)
     ]
 
 
@@ -1207,11 +1268,7 @@ def async_entries_for_config_entry(
     registry: EntityRegistry, config_entry_id: str
 ) -> list[RegistryEntry]:
     """Return entries that match a config entry."""
-    return [
-        entry
-        for entry in registry.entities.values()
-        if entry.config_entry_id == config_entry_id
-    ]
+    return registry.entities.get_entries_for_config_entry_id(config_entry_id)
 
 
 @callback
@@ -1315,11 +1372,17 @@ async def async_migrate_entries(
     config_entry_id: str,
     entry_callback: Callable[[RegistryEntry], dict[str, Any] | None],
 ) -> None:
-    """Migrator of unique IDs."""
+    """Migrate entity registry entries which belong to a config entry.
+
+    Can be used as a migrator of unique_ids or to update other entity registry data.
+    Can also be used to remove duplicated entity registry entries.
+    """
     ent_reg = async_get(hass)
 
-    for entry in ent_reg.entities.values():
+    for entry in list(ent_reg.entities.values()):
         if entry.config_entry_id != config_entry_id:
+            continue
+        if not ent_reg.entities.get_entry(entry.id):
             continue
 
         updates = entry_callback(entry)

@@ -41,13 +41,13 @@ from .const import (
 _SENTINEL = object()
 
 
-def get_nested_attr(obj: Any, attr: str) -> Any:
+def get_nested_attr(obj: Any, attrs: tuple[str, ...]) -> Any:
     """Fetch a nested attribute."""
-    if "." not in attr:
-        value = getattr(obj, attr, None)
+    if len(attrs) == 1:
+        value = getattr(obj, attrs[0], None)
     else:
         value = obj
-        for key in attr.split("."):
+        for key in attrs:
             if (value := getattr(value, key, _SENTINEL)) is _SENTINEL:
                 return None
 
@@ -111,8 +111,8 @@ def async_get_light_motion_current(obj: Light) -> str:
     """Get light motion mode for Flood Light."""
 
     if (
-        obj.light_mode_settings.mode == LightModeType.MOTION
-        and obj.light_mode_settings.enable_at == LightModeEnableType.DARK
+        obj.light_mode_settings.mode is LightModeType.MOTION
+        and obj.light_mode_settings.enable_at is LightModeEnableType.DARK
     ):
         return f"{LightModeType.MOTION.value}Dark"
     return obj.light_mode_settings.mode.value

@@ -11,8 +11,8 @@ from aioshelly.exceptions import DeviceConnectionError, InvalidAuthError, RpcCal
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
-from homeassistant.helpers.entity import DeviceInfo, Entity, EntityDescription
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
+from homeassistant.helpers.entity import Entity, EntityDescription
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import (
     RegistryEntry,
@@ -39,7 +39,6 @@ def async_setup_entry_attribute_entities(
     async_add_entities: AddEntitiesCallback,
     sensors: Mapping[tuple[str, str], BlockEntityDescription],
     sensor_class: Callable,
-    description_class: Callable[[RegistryEntry], BlockEntityDescription],
 ) -> None:
     """Set up entities for attributes."""
     coordinator = get_entry_data(hass)[config_entry.entry_id].block
@@ -56,7 +55,6 @@ def async_setup_entry_attribute_entities(
             coordinator,
             sensors,
             sensor_class,
-            description_class,
         )
 
 
@@ -113,7 +111,6 @@ def async_restore_block_attribute_entities(
     coordinator: ShellyBlockCoordinator,
     sensors: Mapping[tuple[str, str], BlockEntityDescription],
     sensor_class: Callable,
-    description_class: Callable[[RegistryEntry], BlockEntityDescription],
 ) -> None:
     """Restore block attributes entities."""
     entities = []
@@ -128,11 +125,12 @@ def async_restore_block_attribute_entities(
             continue
 
         attribute = entry.unique_id.split("-")[-1]
-        description = description_class(entry)
+        block_type = entry.unique_id.split("-")[-2].split("_")[0]
 
-        entities.append(
-            sensor_class(coordinator, None, attribute, description, entry, sensors)
-        )
+        if description := sensors.get((block_type, attribute)):
+            entities.append(
+                sensor_class(coordinator, None, attribute, description, entry)
+            )
 
     if not entities:
         return
@@ -266,7 +264,7 @@ def async_setup_entry_rest(
     )
 
 
-@dataclass
+@dataclass(frozen=True)
 class BlockEntityDescription(EntityDescription):
     """Class to describe a BLOCK entity."""
 
@@ -283,14 +281,14 @@ class BlockEntityDescription(EntityDescription):
     extra_state_attributes: Callable[[Block], dict | None] | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class RpcEntityRequiredKeysMixin:
     """Class for RPC entity required keys."""
 
     sub_key: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class RpcEntityDescription(EntityDescription, RpcEntityRequiredKeysMixin):
     """Class to describe a RPC entity."""
 
@@ -306,7 +304,7 @@ class RpcEntityDescription(EntityDescription, RpcEntityRequiredKeysMixin):
     supported: Callable = lambda _: False
 
 
-@dataclass
+@dataclass(frozen=True)
 class RestEntityDescription(EntityDescription):
     """Class to describe a REST entity."""
 
@@ -326,17 +324,12 @@ class ShellyBlockEntity(CoordinatorEntity[ShellyBlockCoordinator]):
         super().__init__(coordinator)
         self.block = block
         self._attr_name = get_block_entity_name(coordinator.device, block)
-        self._attr_should_poll = False
         self._attr_device_info = DeviceInfo(
             connections={(CONNECTION_NETWORK_MAC, coordinator.mac)}
         )
         self._attr_unique_id = f"{coordinator.mac}-{block.description}"
 
-    @property
-    def available(self) -> bool:
-        """Available."""
-        return self.coordinator.last_update_success
-
+    # pylint: disable-next=hass-missing-super-call
     async def async_added_to_hass(self) -> None:
         """When entity is added to HASS."""
         self.async_on_remove(self.coordinator.async_add_listener(self._update_callback))
@@ -368,7 +361,6 @@ class ShellyRpcEntity(CoordinatorEntity[ShellyRpcCoordinator]):
         """Initialize Shelly entity."""
         super().__init__(coordinator)
         self.key = key
-        self._attr_should_poll = False
         self._attr_device_info = {
             "connections": {(CONNECTION_NETWORK_MAC, coordinator.mac)}
         }
@@ -376,15 +368,11 @@ class ShellyRpcEntity(CoordinatorEntity[ShellyRpcCoordinator]):
         self._attr_name = get_rpc_entity_name(coordinator.device, key)
 
     @property
-    def available(self) -> bool:
-        """Available."""
-        return self.coordinator.last_update_success
-
-    @property
     def status(self) -> dict:
         """Device status by entity key."""
         return cast(dict, self.coordinator.device.status[self.key])
 
+    # pylint: disable-next=hass-missing-super-call
     async def async_added_to_hass(self) -> None:
         """When entity is added to HASS."""
         self.async_on_remove(self.coordinator.async_add_listener(self._update_callback))
@@ -454,7 +442,7 @@ class ShellyBlockAttributeEntity(ShellyBlockEntity, Entity):
         """Available."""
         available = super().available
 
-        if not available or not self.entity_description.available:
+        if not available or not self.entity_description.available or self.block is None:
             return available
 
         return self.entity_description.available(self.block)
@@ -561,7 +549,7 @@ class ShellyRpcAttributeEntity(ShellyRpcEntity, Entity):
 class ShellySleepingBlockAttributeEntity(ShellyBlockAttributeEntity):
     """Represent a shelly sleeping block attribute entity."""
 
-    # pylint: disable=super-init-not-called
+    # pylint: disable-next=super-init-not-called
     def __init__(
         self,
         coordinator: ShellyBlockCoordinator,
@@ -569,17 +557,14 @@ class ShellySleepingBlockAttributeEntity(ShellyBlockAttributeEntity):
         attribute: str,
         description: BlockEntityDescription,
         entry: RegistryEntry | None = None,
-        sensors: Mapping[tuple[str, str], BlockEntityDescription] | None = None,
     ) -> None:
         """Initialize the sleeping sensor."""
-        self.sensors = sensors
         self.last_state: State | None = None
         self.coordinator = coordinator
         self.attribute = attribute
         self.block: Block | None = block  # type: ignore[assignment]
         self.entity_description = description
 
-        self._attr_should_poll = False
         self._attr_device_info = DeviceInfo(
             connections={(CONNECTION_NETWORK_MAC, coordinator.mac)}
         )
@@ -598,11 +583,7 @@ class ShellySleepingBlockAttributeEntity(ShellyBlockAttributeEntity):
     @callback
     def _update_callback(self) -> None:
         """Handle device update."""
-        if (
-            self.block is not None
-            or not self.coordinator.device.initialized
-            or self.sensors is None
-        ):
+        if self.block is not None or not self.coordinator.device.initialized:
             super()._update_callback()
             return
 
@@ -618,16 +599,17 @@ class ShellySleepingBlockAttributeEntity(ShellyBlockAttributeEntity):
                 if sensor_id != entity_sensor:
                     continue
 
-                description = self.sensors.get((block.type, sensor_id))
-                if description is None:
-                    continue
-
                 self.block = block
-                self.entity_description = description
-
                 LOGGER.debug("Entity %s attached to block", self.name)
                 super()._update_callback()
                 return
+
+    async def async_update(self) -> None:
+        """Update the entity."""
+        LOGGER.info(
+            "Entity %s comes from a sleeping device, update is not possible",
+            self.entity_id,
+        )
 
 
 class ShellySleepingRpcAttributeEntity(ShellyRpcAttributeEntity):
@@ -635,7 +617,7 @@ class ShellySleepingRpcAttributeEntity(ShellyRpcAttributeEntity):
 
     entity_description: RpcEntityDescription
 
-    # pylint: disable=super-init-not-called
+    # pylint: disable-next=super-init-not-called
     def __init__(
         self,
         coordinator: ShellyRpcCoordinator,
@@ -651,7 +633,6 @@ class ShellySleepingRpcAttributeEntity(ShellyRpcAttributeEntity):
         self.attribute = attribute
         self.entity_description = description
 
-        self._attr_should_poll = False
         self._attr_device_info = DeviceInfo(
             connections={(CONNECTION_NETWORK_MAC, coordinator.mac)}
         )
@@ -666,3 +647,10 @@ class ShellySleepingRpcAttributeEntity(ShellyRpcAttributeEntity):
             )
         elif entry is not None:
             self._attr_name = cast(str, entry.original_name)
+
+    async def async_update(self) -> None:
+        """Update the entity."""
+        LOGGER.info(
+            "Entity %s comes from a sleeping device, update is not possible",
+            self.entity_id,
+        )

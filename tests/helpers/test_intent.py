@@ -18,6 +18,8 @@ from homeassistant.helpers import (
 )
 from homeassistant.setup import async_setup_component
 
+from tests.common import MockConfigEntry
+
 
 class MockIntentHandler(intent.IntentHandler):
     """Provide a mock intent handler."""
@@ -116,11 +118,15 @@ async def test_match_device_area(
     entity_registry: er.EntityRegistry,
 ) -> None:
     """Test async_match_state with a device in an area."""
+    config_entry = MockConfigEntry()
+    config_entry.add_to_hass(hass)
     area_kitchen = area_registry.async_get_or_create("kitchen")
     area_bedroom = area_registry.async_get_or_create("bedroom")
 
     kitchen_device = device_registry.async_get_or_create(
-        config_entry_id="1234", connections=set(), identifiers={("demo", "id-1234")}
+        config_entry_id=config_entry.entry_id,
+        connections=set(),
+        identifiers={("demo", "id-1234")},
     )
     device_registry.async_update_device(kitchen_device.id, area_id=area_kitchen.id)
 
@@ -186,7 +192,7 @@ async def test_cant_turn_on_lock(hass: HomeAssistant) -> None:
     )
 
     assert result.response.response_type == intent.IntentResponseType.ERROR
-    assert result.response.error_code == intent.IntentResponseErrorCode.NO_INTENT_MATCH
+    assert result.response.error_code == intent.IntentResponseErrorCode.NO_VALID_TARGETS
 
 
 def test_async_register(hass: HomeAssistant) -> None:

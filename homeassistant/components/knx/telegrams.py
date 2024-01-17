@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
-import datetime as dt
-from typing import TypedDict
+from typing import Final, TypedDict
 
 from xknx import XKNX
 from xknx.exceptions import XKNXException
@@ -12,9 +11,15 @@ from xknx.telegram import Telegram
 from xknx.telegram.apci import GroupValueResponse, GroupValueWrite
 
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.storage import Store
 import homeassistant.util.dt as dt_util
 
+from .const import DOMAIN, SIGNAL_KNX_TELEGRAM_DICT
 from .project import KNXProject
+
+STORAGE_VERSION: Final = 1
+STORAGE_KEY: Final = f"{DOMAIN}/telegrams_history.json"
 
 
 class TelegramDict(TypedDict):
@@ -31,7 +36,7 @@ class TelegramDict(TypedDict):
     source: str
     source_name: str
     telegramtype: str
-    timestamp: dt.datetime
+    timestamp: str  # ISO format
     unit: str | None
     value: str | int | float | bool | None
 
@@ -49,6 +54,9 @@ class Telegrams:
         """Initialize Telegrams class."""
         self.hass = hass
         self.project = project
+        self._history_store = Store[list[TelegramDict]](
+            hass, STORAGE_VERSION, STORAGE_KEY
+        )
         self._jobs: list[HassJob[[TelegramDict], None]] = []
         self._xknx_telegram_cb_handle = (
             xknx.telegram_queue.register_telegram_received_cb(
@@ -58,10 +66,29 @@ class Telegrams:
         )
         self.recent_telegrams: deque[TelegramDict] = deque(maxlen=log_size)
 
+    async def load_history(self) -> None:
+        """Load history from store."""
+        if (telegrams := await self._history_store.async_load()) is None:
+            return
+        if self.recent_telegrams.maxlen == 0:
+            await self._history_store.async_remove()
+            return
+        for telegram in telegrams:
+            # tuples are stored as lists in JSON
+            if isinstance(telegram["payload"], list):
+                telegram["payload"] = tuple(telegram["payload"])  # type: ignore[unreachable]
+        self.recent_telegrams.extend(telegrams)
+
+    async def save_history(self) -> None:
+        """Save history to store."""
+        if self.recent_telegrams:
+            await self._history_store.async_save(list(self.recent_telegrams))
+
     async def _xknx_telegram_cb(self, telegram: Telegram) -> None:
         """Handle incoming and outgoing telegrams from xknx."""
         telegram_dict = self.telegram_to_dict(telegram)
         self.recent_telegrams.append(telegram_dict)
+        async_dispatcher_send(self.hass, SIGNAL_KNX_TELEGRAM_DICT, telegram_dict)
         for job in self._jobs:
             self.hass.async_run_hass_job(job, telegram_dict)
 
@@ -129,7 +156,7 @@ class Telegrams:
             source=f"{telegram.source_address}",
             source_name=src_name,
             telegramtype=telegram.payload.__class__.__name__,
-            timestamp=dt_util.as_local(dt_util.utcnow()),
+            timestamp=dt_util.now().isoformat(),
             unit=unit,
             value=value,
         )

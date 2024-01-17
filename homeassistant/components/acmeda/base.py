@@ -66,17 +66,17 @@ class AcmedaBase(entity.Entity):
     @property
     def unique_id(self) -> str:
         """Return the unique ID of this roller."""
-        return self.roller.id
+        return self.roller.id  # type: ignore[no-any-return]
 
     @property
     def device_id(self) -> str:
         """Return the ID of this roller."""
-        return self.roller.id
+        return self.roller.id  # type: ignore[no-any-return]
 
     @property
-    def device_info(self) -> entity.DeviceInfo:
+    def device_info(self) -> dr.DeviceInfo:
         """Return the device info."""
-        return entity.DeviceInfo(
+        return dr.DeviceInfo(
             identifiers={(DOMAIN, self.unique_id)},
             manufacturer="Rollease Acmeda",
             name=self.roller.name,

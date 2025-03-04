@@ -1,0 +1,9 @@
+{
+  "domain": "rfid_batches",
+  "name": "RFID Batches",
+  "documentation": "https://www.home-assistant.io/integrations/rfid_batches",
+  "requirements": [],
+  "codeowners": ["@jyumpp"],
+  "version": "0.0.1",
+  "config_flow": true
+}

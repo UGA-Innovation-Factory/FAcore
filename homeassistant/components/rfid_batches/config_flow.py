@@ -5,6 +5,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.helpers import selector
 
 from .const import DOMAIN
 
@@ -20,12 +21,19 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Here you could validate and process user_input if needed.
             return self.async_create_entry(
-                title=user_input["card_type"], data=user_input
+                title=user_input["name"], data=user_input
             )
 
         data_schema = vol.Schema(
             {
-                vol.Required("card_type", default="Pecan Batch"): str,
+                vol.Required("name"): str,
+                vol.Required("card_type", default="HASS Tag"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=["HASS Tag", "Pecan Batch", "Equipment"],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required("tag_id", default=str(self.tag_id)): str,
             }
         )
 
@@ -43,17 +51,13 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_user()
 
     @staticmethod
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(entry):
         """Define the options flow."""
-        return RfidBatchesOptionsFlowHandler(config_entry)
+        return RfidBatchesOptionsFlowHandler()
 
 
 class RfidBatchesOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options for RFID Batches integration."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""

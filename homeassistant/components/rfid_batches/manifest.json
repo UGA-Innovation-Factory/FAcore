@@ -1,9 +1,12 @@
 {
   "domain": "rfid_batches",
-  "name": "RFID Batches",
-  "documentation": "https://www.home-assistant.io/integrations/rfid_batches",
-  "requirements": [],
   "codeowners": ["@jyumpp"],
-  "version": "0.0.1",
+  "documentation": "https://www.home-assistant.io/integrations/rfid_batches",
+  "after_dependencies": ["hassio"],
+  "dependencies": ["tag"],
+  "requirements": ["tortoise-orm[asyncpg]==0.24.2"],
+  "name": "RFID Batches",
+  "iot_class": "local_push",
+  "integration_type": "entity",
   "config_flow": true
 }

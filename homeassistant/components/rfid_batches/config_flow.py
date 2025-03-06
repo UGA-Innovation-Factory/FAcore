@@ -1,13 +1,30 @@
 """Config flow for RFID Batches integration."""
 
+from datetime import datetime
 from typing import Any
+import uuid
 
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.helpers import selector
 
-from .const import DOMAIN
+from .const import (
+    CONF_ACTUATORS,
+    CONF_BATCH_CREATION_DATE,
+    CONF_BATCH_ID,
+    CONF_CARD_TYPE,
+    CONF_CARD_TYPE_BATCH,
+    CONF_CARD_TYPE_EQUIPMENT,
+    CONF_CARD_TYPE_TAG,
+    CONF_NAME,
+    CONF_PARENT_BATCH_ID,
+    CONF_SENSORS,
+    CONF_STEP,
+    CONF_STEPS,
+    CONF_TAG_ID,
+    DOMAIN,
+)
 
 
 class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -15,40 +32,117 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None):
-        """Handle the initial step."""
-        errors = {}
-        if user_input is not None:
-            # Here you could validate and process user_input if needed.
-            return self.async_create_entry(
-                title=user_input["name"], data=user_input
-            )
-
-        data_schema = vol.Schema(
-            {
-                vol.Required("name"): str,
-                vol.Required("card_type", default="HASS Tag"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=["HASS Tag", "Pecan Batch", "Equipment"],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required("tag_id", default=str(self.tag_id)): str,
-            }
-        )
-
-        return self.async_show_form(
-            step_id="user", data_schema=data_schema, errors=errors
-        )
-
     async def async_step_integration_discovery(self, discovery_info: dict[str, str]):
         """Handle integration discovery."""
-        self.tag_id = discovery_info["tag_id"]
+        self.tag_id = discovery_info[CONF_TAG_ID]
 
         await self.async_set_unique_id(self.tag_id)
         self._abort_if_unique_id_configured()
 
         return await self.async_step_user()
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        """Handle the initial step."""
+
+        if not hasattr(self, "tag_id"):
+            self.tag_id = ""
+
+        user_schema = vol.Schema(
+            {
+                vol.Required(CONF_CARD_TYPE, default=CONF_CARD_TYPE_TAG): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[CONF_CARD_TYPE_TAG, CONF_CARD_TYPE_BATCH, CONF_CARD_TYPE_EQUIPMENT],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(CONF_TAG_ID, default=self.tag_id): str,
+            }
+        )
+        errors = {}
+
+        if user_input is not None:
+            self.shared_input = user_input
+            if user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_TAG:
+                return await self.async_step_tag()
+            if user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_EQUIPMENT:
+                return await self.async_step_equipment()
+            if user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_BATCH:
+                return await self.async_step_batch()
+
+        return self.async_show_form(
+            step_id="user", data_schema=user_schema, errors=errors
+        )
+
+    async def async_step_batch(self, user_input: dict[str, Any] | None = None):
+        """Handle entry creation for a batch instance."""
+        if user_input is not None:
+            return await self.async_step_tag(user_input)
+
+        BATCH_DATA_SCHEMA = vol.Schema(
+            {
+                vol.Required(CONF_BATCH_ID, default=str(uuid.uuid4())): str,
+                vol.Required(CONF_BATCH_CREATION_DATE, default=datetime.now().strftime("%Y-%m-%d %H:%M:%S")): selector.DateTimeSelector(),
+                vol.Optional(CONF_PARENT_BATCH_ID): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="batch",
+            data_schema=BATCH_DATA_SCHEMA,
+        )
+
+    async def async_step_equipment(self, user_input: dict[str, Any] | None = None):
+        """Handle entry creation for an equipment instance."""
+        if user_input is not None:
+            return await self.async_step_tag(user_input)
+
+        EQUIPMENT_DATA_SCHEMA = vol.Schema(
+            {
+                vol.Required(CONF_NAME): str,
+                vol.Required(CONF_STEP): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=CONF_STEPS,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_SENSORS): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["sensor", "input_number", "number", "light"],
+                        multiple=True,
+                    )
+                ),
+                vol.Optional(CONF_ACTUATORS): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["switch", "light", "input_number"],
+                        multiple=True,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="equipment",
+            data_schema=EQUIPMENT_DATA_SCHEMA,
+        )
+
+    async def async_step_tag(self, user_input: dict[str, Any] | None = None):
+        """Handle entry creation for a any tag instance."""
+        if user_input is None:
+            user_input = {}
+
+        if hasattr(self, "shared_input"):
+            user_input.update(self.shared_input)
+
+        if user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_TAG:
+            title = f"Tag {user_input[CONF_TAG_ID]}"
+        elif user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_BATCH:
+            title = f"Batch {user_input[CONF_BATCH_CREATION_DATE]}"
+        elif user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_EQUIPMENT:
+            title = f"Equipment {user_input[CONF_NAME]}"
+
+        return self.async_create_entry(
+            title=title, data=user_input
+        )
 
     @staticmethod
     def async_get_options_flow(entry):
@@ -63,15 +157,17 @@ class RfidBatchesOptionsFlowHandler(config_entries.OptionsFlow):
         """Manage the options."""
         if user_input is not None:
             # Save additional options, such as batch step or relationships.
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(data=user_input)
 
-        data_schema = vol.Schema(
+        OPTIONS_SCHEMA = vol.Schema(
             {
-                vol.Optional(
-                    "batch_step",
-                    default=self.config_entry.options.get("batch_step", "Step1"),
-                ): str,
-                # You can add more options here.
+                vol.Optional(CONF_STEP): str,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=data_schema)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                OPTIONS_SCHEMA, self.config_entry.options
+            )
+        )

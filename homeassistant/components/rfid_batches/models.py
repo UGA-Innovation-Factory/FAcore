@@ -11,7 +11,12 @@ from homeassistant.components.recorder.db_schema import Base as BASE
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN, CONF_CARD_TYPE_TAG, CONF_CARD_TYPE_BATCH, CONF_CARD_TYPE_EQUIPMENT
+from .const import (
+    CONF_CARD_TYPE_BATCH,
+    CONF_CARD_TYPE_EQUIPMENT,
+    CONF_CARD_TYPE_TAG,
+    DOMAIN,
+)
 
 
 def _get_session(hass: HomeAssistant) -> Session:

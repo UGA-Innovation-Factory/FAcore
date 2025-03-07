@@ -3,7 +3,7 @@
 import logging
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, discovery_flow
 
 from .const import CONF_TAG_ID, DOMAIN
@@ -30,7 +30,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             data={CONF_TAG_ID: tag_id},
         )
 
-    async def handle_rfid_event(event):
+    async def handle_rfid_event(event: Event) -> None:
         """Handle incoming RFID tag scanned events."""
 
         tag = event.data.get(CONF_TAG_ID)
@@ -55,17 +55,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
             entry, options={CONF_TAG_ID: entry.data[CONF_TAG_ID]}
         )
 
-    if CONF_TAG_ID in entry.options and CONF_TAG_ID in entry.data and entry.options[CONF_TAG_ID] != entry.data[CONF_TAG_ID]:
-        hass.config_entries.async_update_entry(
-            entry, data={CONF_TAG_ID: entry.options[CONF_TAG_ID]}
-        )
-
     # Forward setup to the select platform (if you want to show batch status)
     await hass.config_entries.async_forward_entry_setups(entry, ["select"])
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry):
+async def async_update_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry):
+    """Update a config entry."""
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry):
     """Unload a config entry."""
     await hass.config_entries.async_forward_entry_unload(entry, "select")
     return True

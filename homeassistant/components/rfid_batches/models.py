@@ -3,8 +3,8 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Enum as SQLEnum, ForeignKey, event
-from sqlalchemy.orm import Mapped, Session, mapped_column, relationship, validates
+from sqlalchemy import Enum as SQLEnum, ForeignKey
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.db_schema import Base as BASE

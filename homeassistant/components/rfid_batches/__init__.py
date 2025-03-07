@@ -7,11 +7,11 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, discovery_flow
 
 from .const import CONF_TAG_ID, DOMAIN
+from .models import ActiveTags
 
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
-
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the RFID Batches integration from configuration."""
@@ -44,9 +44,19 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry):
+async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry):
     """Set up RFID Batches from a config entry."""
     _LOGGER.info("Setting up RFID Batches config entry: %s", entry.data)
+
+    if CONF_TAG_ID not in entry.options and CONF_TAG_ID in entry.data:
+        hass.config_entries.async_update_entry(
+            entry, options={CONF_TAG_ID: entry.data[CONF_TAG_ID]}
+        )
+
+    if CONF_TAG_ID in entry.options and CONF_TAG_ID in entry.data and entry.options[CONF_TAG_ID] != entry.data[CONF_TAG_ID]:
+        hass.config_entries.async_update_entry(
+            entry, data={CONF_TAG_ID: entry.options[CONF_TAG_ID]}
+        )
 
     # Forward setup to the select platform (if you want to show batch status)
     await hass.config_entries.async_forward_entry_setups(entry, ["select"])

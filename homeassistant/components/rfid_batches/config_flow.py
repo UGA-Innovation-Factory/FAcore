@@ -2,11 +2,12 @@
 
 from datetime import datetime
 from typing import Any
-import uuid
 
+import funkybob
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
@@ -49,7 +50,7 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         user_schema = vol.Schema(
             {
-                vol.Required(CONF_CARD_TYPE, default=CONF_CARD_TYPE_TAG): selector.SelectSelector(
+                vol.Required(CONF_CARD_TYPE, default=CONF_CARD_TYPE_BATCH): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[CONF_CARD_TYPE_TAG, CONF_CARD_TYPE_BATCH, CONF_CARD_TYPE_EQUIPMENT],
                         mode=selector.SelectSelectorMode.DROPDOWN,
@@ -78,9 +79,14 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             return await self.async_step_tag(user_input)
 
+        name_generator = funkybob.RandomNameGenerator(members=2, separator=" ")
+        it = iter(name_generator)
+        def next_name():
+            return next(it)
+
         BATCH_DATA_SCHEMA = vol.Schema(
             {
-                vol.Required(CONF_BATCH_ID, default=str(uuid.uuid4())): str,
+                vol.Required(CONF_BATCH_ID, default=str(next_name()).title()): str,
                 vol.Required(CONF_BATCH_CREATION_DATE, default=datetime.now().strftime("%Y-%m-%d %H:%M:%S")): selector.DateTimeSelector(),
                 vol.Optional(CONF_PARENT_BATCH_ID): str,
             }
@@ -136,7 +142,7 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_TAG:
             title = f"Tag {user_input[CONF_TAG_ID]}"
         elif user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_BATCH:
-            title = f"Batch {user_input[CONF_BATCH_CREATION_DATE]}"
+            title = f"Batch {user_input[CONF_BATCH_ID]}"
         elif user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_EQUIPMENT:
             title = f"Equipment {user_input[CONF_NAME]}"
 
@@ -145,6 +151,7 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
+    @callback
     def async_get_options_flow(entry):
         """Define the options flow."""
         return RfidBatchesOptionsFlowHandler()
@@ -161,7 +168,7 @@ class RfidBatchesOptionsFlowHandler(config_entries.OptionsFlow):
 
         OPTIONS_SCHEMA = vol.Schema(
             {
-                vol.Optional(CONF_STEP): str,
+                vol.Optional(CONF_TAG_ID): str,
             }
         )
 

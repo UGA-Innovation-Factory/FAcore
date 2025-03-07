@@ -9,6 +9,7 @@ CONF_CARD_TYPE = "Tag Type"
 CONF_CARD_TYPE_TAG = "HASS Tag"
 CONF_CARD_TYPE_BATCH = "Pecan Batch"
 CONF_CARD_TYPE_EQUIPMENT = "Equipment"
+CONF_CARD_TYPE_NONE = "Unassigned"
 
 CONF_SENSORS = "Sensors"
 CONF_ACTUATORS = "Machine Parameters"

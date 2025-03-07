@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, discovery_flow
 
 from .const import CONF_TAG_ID, DOMAIN
-from .models import ActiveTags
+from .models import async_tag_exists
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,8 +32,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
     async def handle_rfid_event(event):
         """Handle incoming RFID tag scanned events."""
+
         tag = event.data.get(CONF_TAG_ID)
-        async_trigger_discovery(hass, tag)
+        if not await async_tag_exists(hass, tag):
+            async_trigger_discovery(hass, tag)
         _LOGGER.info("RFID tag scanned: %s", tag)
 
     # Listen for events named "rfid_tag_scanned"

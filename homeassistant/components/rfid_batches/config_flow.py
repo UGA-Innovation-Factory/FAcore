@@ -26,6 +26,14 @@ from .const import (
     CONF_TAG_ID,
     DOMAIN,
 )
+from .models import (
+    ActiveTags,
+    BatchData,
+    async_create_batch,
+    async_fetch_or_create_tag,
+    async_link_tag_to_batch,
+    async_tag_exists,
+)
 
 
 class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -77,6 +85,7 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_batch(self, user_input: dict[str, Any] | None = None):
         """Handle entry creation for a batch instance."""
         if user_input is not None:
+            self.db_batch = await async_create_batch(self.hass, user_input[CONF_BATCH_ID])
             return await self.async_step_tag(user_input)
 
         name_generator = funkybob.RandomNameGenerator(members=2, separator=" ")
@@ -138,6 +147,8 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if hasattr(self, "shared_input"):
             user_input.update(self.shared_input)
+
+        db_tag = await async_fetch_or_create_tag(self.hass, user_input[CONF_TAG_ID])
 
         if user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_TAG:
             title = f"Tag {user_input[CONF_TAG_ID]}"

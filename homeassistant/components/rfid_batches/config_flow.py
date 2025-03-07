@@ -146,8 +146,16 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         elif user_input[CONF_CARD_TYPE] == CONF_CARD_TYPE_EQUIPMENT:
             title = f"Equipment {user_input[CONF_NAME]}"
 
+        options = {
+            CONF_TAG_ID: user_input[CONF_TAG_ID],
+        }
+
+        user_input.pop(CONF_TAG_ID, None)
+
         return self.async_create_entry(
-            title=title, data=user_input
+            title=title,
+            data=user_input,
+            options=options
         )
 
     @staticmethod

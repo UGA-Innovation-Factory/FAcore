@@ -50,11 +50,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
     """Set up RFID Batches from a config entry."""
     _LOGGER.info("Setting up RFID Batches config entry: %s", entry.data)
 
-    if CONF_TAG_ID not in entry.options and CONF_TAG_ID in entry.data:
-        hass.config_entries.async_update_entry(
-            entry, options={CONF_TAG_ID: entry.data[CONF_TAG_ID]}
-        )
-
     # Forward setup to the select platform (if you want to show batch status)
     await hass.config_entries.async_forward_entry_setups(entry, ["select"])
     return True

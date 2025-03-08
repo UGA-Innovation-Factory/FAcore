@@ -1,4 +1,4 @@
-"""Config flow for RFID Batches integration."""
+"""Config flow for Batch Tags integration."""
 
 from datetime import datetime
 from typing import Any
@@ -28,8 +28,8 @@ from .const import (
 )
 
 
-class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for RFID Batches."""
+class BatchTagsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Batch Tags."""
 
     VERSION = 1
 
@@ -162,11 +162,11 @@ class RfidBatchesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(entry):
         """Define the options flow."""
-        return RfidBatchesOptionsFlowHandler()
+        return BatchTagsOptionsFlowHandler()
 
 
-class RfidBatchesOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options for RFID Batches integration."""
+class BatchTagsOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options for Batch Tags integration."""
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""

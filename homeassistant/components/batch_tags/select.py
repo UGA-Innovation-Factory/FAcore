@@ -1,4 +1,4 @@
-"""State Selector platform for RFID Batches integration."""
+"""State Selector platform for Batch Tags integration."""
 
 import logging
 
@@ -19,7 +19,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the RFID Batch sensor."""
+    """Set up the Batch Tags sensor."""
     entity_registry: er.EntityRegistry = er.async_get(hass)
     parent = None
     parent_selectors = []

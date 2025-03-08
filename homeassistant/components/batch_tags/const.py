@@ -1,6 +1,6 @@
-"""Constants for the RFID Batches integration."""
+"""Constants for the Batch Tags integration."""
 
-DOMAIN = "rfid_batches"
+DOMAIN = ""
 
 CONF_NAME = "Equipment Name"
 CONF_TAG_ID = "tag_id"

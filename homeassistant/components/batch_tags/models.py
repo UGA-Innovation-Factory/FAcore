@@ -1,4 +1,4 @@
-"""Database Models for the RFID Batch component."""
+"""Database Models for the Batch Tags component."""
 
 from datetime import datetime
 from enum import Enum

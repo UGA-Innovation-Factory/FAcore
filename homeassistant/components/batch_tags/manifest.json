@@ -1,11 +1,11 @@
 {
-  "domain": "rfid_batches",
+  "domain": "batch_tags",
   "codeowners": ["@jyumpp"],
-  "documentation": "https://www.home-assistant.io/integrations/rfid_batches",
+  "documentation": "https://www.home-assistant.io/integrations/batch_tags",
   "after_dependencies": ["hassio"],
   "dependencies": ["tag"],
   "requirements": ["funkybob==2023.12.0"],
-  "name": "RFID Batches",
+  "name": "Batch Tags",
   "iot_class": "local_push",
   "integration_type": "device",
   "config_flow": true
